@@ -30,14 +30,87 @@ USE WideWorldImporters
 Продажи смотреть в таблице Sales.Invoices.
 */
 
-TODO: напишите здесь свое решение
+TODO:
+
+--вложенный запрос
+SELECT 
+	[PersonID]
+	,[FullName]
+FROM 
+	[WideWorldImporters].[Application].[People]
+WHERE
+	IsSalesperson = 1
+	and
+	(SELECT 
+			Count([InvoiceID]) as TotalSales
+		FROM 
+			[WideWorldImporters].[Sales].[Invoices]
+		WHERE
+			Invoices.SalespersonPersonID = People.PersonID
+			and
+			InvoiceDate = '2015-07-04') = 0;
+
+--конструкция WITH
+WITH TotalInvoicesCTE (SalespersonPersonID, TotalSales) as
+	(SELECT 
+		SalespersonPersonID,
+		Count([InvoiceID]) as TotalSales
+	FROM 
+		[WideWorldImporters].[Sales].[Invoices]
+	WHERE
+		InvoiceDate = '2015-07-04'
+	GROUP BY
+		SalespersonPersonID)
+SELECT 
+	People.PersonID,
+	People.FullName
+FROM
+	Application.People
+LEFT JOIN
+	TotalInvoicesCTE
+	ON People.PersonID = TotalInvoicesCTE.SalespersonPersonID
+WHERE
+	IsSalesperson = 1
+	and
+	TotalInvoicesCTE.TotalSales is null
+	;
+
 
 /*
 2. Выберите товары с минимальной ценой (подзапросом). Сделайте два варианта подзапроса. 
 Вывести: ИД товара, наименование товара, цена.
 */
 
-TODO: напишите здесь свое решение
+TODO: 
+
+--1 вариант
+SELECT 
+	StockItemID
+	,StockItemName
+	,UnitPrice
+FROM
+	Warehouse.StockItems
+WHERE
+	UnitPrice <= ALL(
+					SELECT
+						UnitPrice
+					FROM
+						Warehouse.StockItems);
+
+--2 вариант
+SELECT
+	StockItemID
+	,StockItemName
+	,UnitPrice
+FROM
+	Warehouse.StockItems
+WHERE
+	UnitPrice = 
+				(SELECT
+					Min(UnitPrice)
+				FROM
+					Warehouse.StockItems);
+
 
 /*
 3. Выберите информацию по клиентам, которые перевели компании пять максимальных платежей 
@@ -45,7 +118,58 @@ TODO: напишите здесь свое решение
 Представьте несколько способов (в том числе с CTE). 
 */
 
-TODO: напишите здесь свое решение
+TODO:
+
+--CTE
+WITH MaxTransactionsCTE (CustomerID) as
+	(SELECT TOP 5 
+			CustomerID
+		FROM
+			Sales.CustomerTransactions
+		ORDER BY 
+			CustomerTransactions.TransactionAmount desc)
+SELECT
+	Customers.CustomerID,
+	Customers.PhoneNumber,
+	Customers.CustomerName
+FROM
+	Sales.Customers
+JOIN
+	MaxTransactionsCTE
+ON
+	MaxTransactionsCTE.CustomerID = Customers.CustomerID;
+
+--вложенный - in
+SELECT
+	Customers.CustomerID,
+	Customers.PhoneNumber,
+	Customers.CustomerName
+FROM
+	Sales.Customers
+WHERE 
+	Customers.CustomerID IN
+		(SELECT TOP 5 
+			CustomerID
+		FROM
+			Sales.CustomerTransactions
+		ORDER BY 
+			CustomerTransactions.TransactionAmount desc);
+
+--вложенный ANY
+SELECT
+	Customers.CustomerID,
+	Customers.PhoneNumber,
+	Customers.CustomerName
+FROM
+	Sales.Customers
+WHERE 
+	Customers.CustomerID = ANY
+		(SELECT TOP 5 
+			CustomerID
+		FROM
+			Sales.CustomerTransactions
+		ORDER BY 
+			CustomerTransactions.TransactionAmount desc);
 
 /*
 4. Выберите города (ид и название), в которые были доставлены товары, 
@@ -66,6 +190,10 @@ TODO: напишите здесь свое решение
 
 -- 5. Объясните, что делает и оптимизируйте запрос
 
+TODO: 
+
+SET STATISTICS TIME ON;
+--было
 SELECT 
 	Invoices.InvoiceID, 
 	Invoices.InvoiceDate,
@@ -73,7 +201,7 @@ SELECT
 		FROM Application.People
 		WHERE People.PersonID = Invoices.SalespersonPersonID
 	) AS SalesPersonName,
-	SalesTotals.TotalSumm AS TotalSummByInvoice, 
+	SalesTotals.TotalSum AS TotalSummByInvoice, 
 	(SELECT SUM(OrderLines.PickedQuantity*OrderLines.UnitPrice)
 		FROM Sales.OrderLines
 		WHERE OrderLines.OrderId = (SELECT Orders.OrderId 
@@ -83,13 +211,36 @@ SELECT
 	) AS TotalSummForPickedItems
 FROM Sales.Invoices 
 	JOIN
-	(SELECT InvoiceId, SUM(Quantity*UnitPrice) AS TotalSumm
+	(SELECT InvoiceId, SUM(Quantity*UnitPrice) AS TotalSum
 	FROM Sales.InvoiceLines
 	GROUP BY InvoiceId
 	HAVING SUM(Quantity*UnitPrice) > 27000) AS SalesTotals
 		ON Invoices.InvoiceID = SalesTotals.InvoiceID
-ORDER BY TotalSumm DESC
+ORDER BY TotalSum DESC;
 
--- --
+--стало
+SELECT 
+	Invoices.InvoiceID, 
+	Invoices.InvoiceDate,
+	(SELECT People.FullName
+		FROM Application.People
+		WHERE People.PersonID = Invoices.SalespersonPersonID
+	) AS SalesPersonName,
+	SalesTotals.TotalSum AS TotalSummByInvoice, 
+	(SELECT SUM(OrderLines.PickedQuantity*OrderLines.UnitPrice)
+		FROM Sales.OrderLines
+		WHERE OrderLines.OrderId = (SELECT Orders.OrderId 
+			FROM Sales.Orders
+			WHERE Orders.PickingCompletedWhen IS NOT NULL	
+				AND Orders.OrderId = Invoices.OrderId)	
+	) AS TotalSummForPickedItems
+FROM Sales.Invoices 
+	JOIN
+	(SELECT InvoiceId, SUM(Quantity*UnitPrice) AS TotalSum
+	FROM Sales.InvoiceLines
+	GROUP BY InvoiceId
+	HAVING SUM(Quantity*UnitPrice) > 27000) AS SalesTotals
+		ON Invoices.InvoiceID = SalesTotals.InvoiceID
+ORDER BY TotalSum DESC;
 
-TODO: напишите здесь свое решение
+SET STATISTICS TIME OFF
