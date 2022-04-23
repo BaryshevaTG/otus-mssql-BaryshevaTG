@@ -50,7 +50,7 @@ WHERE
 			and
 			InvoiceDate = '2015-07-04') = 0;
 
---конструкция WITH
+--WITH
 WITH TotalInvoicesCTE (SalespersonPersonID, TotalSales) as
 	(SELECT 
 		SalespersonPersonID,
@@ -177,7 +177,53 @@ WHERE
 который осуществлял упаковку заказов (PackedByPersonID).
 */
 
-TODO: напишите здесь свое решение
+TODO: 
+
+WITH LookForCityIDCTE (CityID) as
+
+--ищем город покупателя
+(SELECT
+		[Customers].PostalCityID
+	FROM
+		[Sales].[Customers]
+	WHERE
+		[Customers].CustomerID IN
+								--ищем покупателя по номеру заказа, отбирем по уникальным значениям
+								(SELECT DISTINCT
+									[Invoices].CustomerID
+								FROM
+									[Sales].[Invoices]
+								WHERE
+									[Invoices].InvoiceID IN
+														--ищем позиции заказов, соответствующие позициям товаров
+														(SELECT
+															[InvoiceLines].InvoiceID
+														FROM
+															[Sales].[InvoiceLines]
+														WHERE
+															[InvoiceLines].StockItemID IN 
+																						--ищем товары, которые входят в тройку по самой высокой цене (таких 4)
+																						(SELECT TOP 3 with ties
+																							StockItems.StockItemID
+																						FROM
+																							Warehouse.StockItems
+																						ORDER BY
+																							StockItems.UnitPrice
+																						)
+														)
+								)
+	)
+--присоединяем по идентификатору города
+SELECT 
+	[Cities].[CityID],
+	[Cities].[CityName]
+FROM
+	[Application].[Cities]
+JOIN
+	LookForCityIDCTE
+ON
+	[Cities].[CityID] = LookForCityIDCTE.CityID;
+
 
 -- ---------------------------------------------------------------------------
 -- Опциональное задание
@@ -192,8 +238,10 @@ TODO: напишите здесь свое решение
 
 TODO: 
 
-SET STATISTICS TIME ON;
+SET STATISTICS TIME ON
 --было
+--запрос показывает доставленные заказы, общая фактическая сумма которых больше 27000
+--дату данного заказа, имя сотрудника и предполагаемая изначально сумма за товары.
 SELECT 
 	Invoices.InvoiceID, 
 	Invoices.InvoiceDate,
@@ -218,29 +266,87 @@ FROM Sales.Invoices
 		ON Invoices.InvoiceID = SalesTotals.InvoiceID
 ORDER BY TotalSum DESC;
 
---стало
+--стало. попытка 1
+WITH InvoicesCTE (OrderId, InvoiceID, SalesPersonName, InvoiceDate, SalesTotals) as
+	(
+		SELECT
+				Invoices.OrderId as OrderId,
+				Invoices.InvoiceID as InvoiceID, 
+				Invoices.InvoiceDate as InvoiceDate,
+					(SELECT People.FullName
+						FROM Application.People
+						WHERE People.PersonID = Invoices.SalespersonPersonID
+					) AS SalesPersonName,
+					(SELECT
+						SUM(InvoiceLines.Quantity*InvoiceLines.UnitPrice) AS TotalSum
+					FROM Sales.InvoiceLines
+					WHERE InvoiceLines.InvoiceID = Invoices.InvoiceID 
+					) AS SalesTotals
+			FROM
+				Sales.Invoices 
+	)
 SELECT 
-	Invoices.InvoiceID, 
-	Invoices.InvoiceDate,
-	(SELECT People.FullName
-		FROM Application.People
-		WHERE People.PersonID = Invoices.SalespersonPersonID
-	) AS SalesPersonName,
-	SalesTotals.TotalSum AS TotalSummByInvoice, 
-	(SELECT SUM(OrderLines.PickedQuantity*OrderLines.UnitPrice)
-		FROM Sales.OrderLines
-		WHERE OrderLines.OrderId = (SELECT Orders.OrderId 
-			FROM Sales.Orders
-			WHERE Orders.PickingCompletedWhen IS NOT NULL	
-				AND Orders.OrderId = Invoices.OrderId)	
-	) AS TotalSummForPickedItems
-FROM Sales.Invoices 
-	JOIN
-	(SELECT InvoiceId, SUM(Quantity*UnitPrice) AS TotalSum
-	FROM Sales.InvoiceLines
-	GROUP BY InvoiceId
-	HAVING SUM(Quantity*UnitPrice) > 27000) AS SalesTotals
-		ON Invoices.InvoiceID = SalesTotals.InvoiceID
-ORDER BY TotalSum DESC;
+	InvoicesCTE.InvoiceID,
+	InvoicesCTE.InvoiceDate,
+	InvoicesCTE.SalesPersonName,
+	InvoicesCTE.SalesTotals as TotalSumByInvoice,
+	(SELECT	
+		SUM(OrderLines.PickedQuantity*OrderLines.UnitPrice)
+	FROM
+		Sales.OrderLines
+	WHERE Orders.OrderId = OrderLines.OrderID
+	) AS TotalSumForPickedItems
+FROM [Sales].[Orders]
+JOIN
+	InvoicesCTE
+ON 
+	InvoicesCTE.OrderId = Orders.OrderID
+WHERE 
+	Orders.PickingCompletedWhen IS NOT NULL
+	and
+	InvoicesCTE.SalesTotals > 27000
+ORDER BY InvoicesCTE.SalesTotals DESC;
+
+--стало. попытка 2
+--я пыталась красиво напсиать, но 50 а 50 по процентам оставалось.
+--как получилось, уже сбилась со счета который день сижу.
+--подозреваю надо было вынести расчет SalesTotals отдельно, но как бы я не выносила, результат не менялся, только двойное одинаковое условие дает мне уменьшение процентов.
+WITH InvoicesCTE (InvoiceID, InvoiceDate, SalesPersonName, TotalSumForPickedItems, SalesTotals) as
+	(
+		SELECT
+				Invoices.InvoiceID as InvoiceID, 
+				Invoices.InvoiceDate as InvoiceDate,
+					(SELECT People.FullName
+						FROM Application.People
+						WHERE People.PersonID = Invoices.SalespersonPersonID
+					) AS SalesPersonName,
+					(SELECT	
+						SUM(OrderLines.PickedQuantity*OrderLines.UnitPrice)
+					FROM
+						Sales.OrderLines
+					WHERE Invoices.OrderId = OrderLines.OrderID
+					) AS TotalSumForPickedItems,
+					(SELECT
+						SUM(InvoiceLines.Quantity*InvoiceLines.UnitPrice) AS TotalSum
+					FROM Sales.InvoiceLines
+					WHERE InvoiceLines.InvoiceID = Invoices.InvoiceID 
+					) AS SalesTotals
+			FROM
+				Sales.Invoices 
+			WHERE
+				Invoices.OrderId IN (SELECT Orders.OrderId FROM Sales.Orders WHERE Orders.PickingCompletedWhen IS NOT NULL)
+				and
+				(SELECT	SUM(InvoiceLines.Quantity*InvoiceLines.UnitPrice) FROM Sales.InvoiceLines WHERE InvoiceLines.InvoiceID = Invoices.InvoiceID) > 27000
+	)
+SELECT 
+	InvoicesCTE.InvoiceID,
+	InvoicesCTE.InvoiceDate,
+	InvoicesCTE.SalesPersonName,
+	InvoicesCTE.TotalSumForPickedItems,
+	InvoicesCTE.SalesTotals as TotalSumByInvoice
+FROM InvoicesCTE
+WHERE 
+	InvoicesCTE.SalesTotals > 27000
+ORDER BY InvoicesCTE.SalesTotals DESC;
 
 SET STATISTICS TIME OFF
