@@ -38,8 +38,19 @@ InvoiceMonth | Peeples Valley, AZ | Medicine Lodge, KS | Gasport, NY | Sylvanite
 01.02.2013   |      7             |        3           |      4      |      2        |     1
 -------------+--------------------+--------------------+-------------+--------------+------------
 */
-
-напишите здесь свое решение
+SELECT * FROM
+	(SELECT
+		SUBSTRING(Customers.CustomerName,CHARINDEX('(',Customers.CustomerName)+1,CHARINDEX(')',Customers.CustomerName) - CHARINDEX('(',Customers.CustomerName)-1) as Customer,
+		FORMAT(Invoices.InvoiceDate, '01.MM.yyyy') as FirstDateOfMonth,
+		(SELECT Sum(InvoiceLines.Quantity) FROM Sales.InvoiceLines WHERE Invoices.InvoiceID = InvoiceLines.InvoiceID) as Quantity
+	FROM
+		Sales.Invoices
+	JOIN Sales.Customers ON Invoices.CustomerID=Customers.CustomerID
+	WHERE
+		Customers.CustomerID >=2 and Customers.CustomerID <= 6) as TBL
+PIVOT
+	(SUM(Quantity) FOR Customer IN ([Peeples Valley, AZ], [Medicine Lodge, KS], [Gasport, NY], [Sylvanite, MT], [Jessie, ND])) as PVT
+ORDER BY FirstDateOfMonth;
 
 /*
 2. Для всех клиентов с именем, в котором есть "Tailspin Toys"
@@ -55,8 +66,19 @@ Tailspin Toys (Head Office) | PO Box 8975
 Tailspin Toys (Head Office) | Ribeiroville
 ----------------------------+--------------------
 */
-
-напишите здесь свое решение
+SELECT * FROM(
+	SELECT
+		CustomerName,
+		[DeliveryAddressLine1],
+		[DeliveryAddressLine2],
+		[PostalAddressLine1],
+		[PostalAddressLine2]
+	FROM
+		Sales.Customers
+	WHERE
+		CustomerName like '%Tailspin Toys%') as TBL
+UNPIVOT (FullAddress FOR Address IN ([DeliveryAddressLine1], [DeliveryAddressLine2], [PostalAddressLine1], [PostalAddressLine2])) as UNPVT
+ORDER BY CustomerName;
 
 /*
 3. В таблице стран (Application.Countries) есть поля с цифровым кодом страны и с буквенным.
@@ -73,12 +95,37 @@ CountryId | CountryName | Code
 3         | Albania     | 8
 ----------+-------------+-------
 */
+SELECT * FROM(
+	SELECT 
+		[CountryID],
+		[CountryName],
+		[IsoAlpha3Code],
+		CAST([IsoNumericCode] AS NVARCHAR(3)) as [IsoNumericCode]
+	FROM 
+		[Application].[Countries]) as TBL
+UNPIVOT (Code FOR CountryCode IN ([IsoAlpha3Code],[IsoNumericCode])) as UNPVT
+ORDER BY [CountryID];
 
-напишите здесь свое решение
 
 /*
 4. Выберите по каждому клиенту два самых дорогих товара, которые он покупал.
 В результатах должно быть ид клиета, его название, ид товара, цена, дата покупки.
 */
 
-напишите здесь свое решение
+SELECT
+	TBL1.CustomerID,
+	TBL1.CustomerName,
+	TBL2.*
+FROM
+	Sales.Customers TBL1
+CROSS APPLY (SELECT	TOP 2
+				InvoiceLines.StockItemID,
+				InvoiceLines.UnitPrice,
+				(SELECT Invoices.InvoiceDate FROM Sales.Invoices WHERE InvoiceLines.InvoiceID = Invoices.InvoiceID) as Date
+			FROM
+				Sales.InvoiceLines
+			WHERE 
+				TBL1.CustomerID IN (SELECT CustomerID FROM Sales.Invoices WHERE InvoiceLines.InvoiceID = Invoices.InvoiceID)
+			ORDER BY UnitPrice
+				) TBL2
+ORDER BY TBL1.CustomerID;

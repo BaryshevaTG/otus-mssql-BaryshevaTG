@@ -45,14 +45,74 @@ USE WideWorldImporters
    Сравните производительность запросов 1 и 2 с помощью set statistics time, io on
 */
 
-напишите здесь свое решение
+WITH TotalCTE (InvoiceID, TotalSales) AS
+(SELECT
+	InvoiceLines.InvoiceID AS InvoiceID,
+	Sum(InvoiceLines.UnitPrice*InvoiceLines.Quantity) AS TotalSales
+FROM
+	Sales.InvoiceLines	
+GROUP BY
+	InvoiceLines.InvoiceID
+)
+
+SELECT [Invoices].InvoiceID,
+      (SELECT 
+			CustomerName
+		FROM
+			Sales.Customers
+		WHERE
+			Customers.CustomerID = Invoices.CustomerID
+		) AS [Customer Name],
+		Invoices.InvoiceDate,
+		TotalCTE.TotalSales,
+		Sum(TotalCTE.TotalSales) OVER (PARTITION BY Month(Invoices.InvoiceDate)) AS GrowingTotal 	  
+FROM 
+	[Sales].[Invoices]
+JOIN
+	TotalCTE
+ON 
+	TotalCTE.InvoiceID = Invoices.InvoiceID
+WHERE
+	Invoices.InvoiceDate >= '2015-01-01';
 
 /*
 3. Вывести список 2х самых популярных продуктов (по количеству проданных) 
 в каждом месяце за 2016 год (по 2 самых популярных продукта в каждом месяце).
 */
+WITH QuantityCTE as
+(SELECT DISTINCT
+	InvoiceLines.[StockItemID] as StockItemID,
+	SUM([InvoiceLines].Quantity) as Quantity,
+	Month(Invoices.InvoiceDate) as Month
+FROM 
+	Sales.InvoiceLines
+JOIN
+	Sales.Invoices
+ON
+	InvoiceLines.InvoiceID = Invoices.InvoiceID
+WHERE
+	Year(Invoices.InvoiceDate) = '2016'
+GROUP BY 
+	InvoiceLines.[StockItemID], Month(Invoices.InvoiceDate)),
+TotaQntCTE as
+(SELECT
+	QuantityCTE.StockItemID as StockItemID,
+	QuantityCTE.Month as Month,
+	QuantityCTE.Quantity as TotalQuantity,
+	RANK() OVER (PARTITION BY QuantityCTE.Month ORDER BY QuantityCTE.Quantity DESC) as TotalRnkByMonth 
+FROM
+	QuantityCTE)
+SELECT
+	TotaQntCTE.StockItemID,
+	TotaQntCTE.Month,
+	TotalQuantity
+FROM	
+	TotaQntCTE
+WHERE
+	TotalRnkByMonth <= 2
+ORDER BY
+	TotaQntCTE.Month, TotaQntCTE.StockItemID;
 
-напишите здесь свое решение
 
 /*
 4. Функции одним запросом
