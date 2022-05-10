@@ -33,7 +33,7 @@ USE WideWorldImporters
 TODO:
 
 --вложенный запрос
-SELECT 
+SELECT
 	[PersonID]
 	,[FullName]
 FROM 
