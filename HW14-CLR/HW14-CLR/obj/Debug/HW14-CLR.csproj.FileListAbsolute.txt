@@ -1,0 +1,6 @@
+C:\Users\acer\source\repos\HW14-CLR\bin\Debug\HW14-CLR.dll
+C:\Users\acer\source\repos\HW14-CLR\bin\Debug\HW14-CLR.pdb
+C:\Users\acer\source\repos\HW14-CLR\obj\Debug\HW14-CLR.csproj.AssemblyReference.cache
+C:\Users\acer\source\repos\HW14-CLR\obj\Debug\HW14-CLR.csproj.CoreCompileInputs.cache
+C:\Users\acer\source\repos\HW14-CLR\obj\Debug\HW14-CLR.dll
+C:\Users\acer\source\repos\HW14-CLR\obj\Debug\HW14-CLR.pdb
